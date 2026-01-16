@@ -1,0 +1,1 @@
+Frontend: run `npm install` then `npm start`. Ensure backend is running at /api endpoints.

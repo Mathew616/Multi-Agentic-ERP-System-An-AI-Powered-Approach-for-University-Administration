@@ -5,23 +5,35 @@ import { AuthContext } from "../context/AuthContext";
 const Topbar = () => {
   const { user, logout } = useContext(AuthContext);
 
-  return (
-    <header className="bg-white shadow flex justify-between items-center px-6 py-3 border-b border-gray-200">
-      <h1 className="text-lg font-semibold text-gray-700">
-        {user?.role === "student" && "Student Dashboard"}
-        {user?.role === "teacher" && "Teacher Dashboard"}
-        {user?.role === "iqc" && "IQC Admin Dashboard"}
-      </h1>
+  const getRoleDisplay = () => {
+    const roleMap = {
+      student: "Student Portal",
+      teacher: "Faculty Portal",
+      iqc: "Administration Portal"
+    };
+    return roleMap[user?.role] || "Dashboard";
+  };
 
-      <div className="flex items-center gap-3">
-        <span className="text-gray-600 font-medium">
-          {user?.username?.toUpperCase()}
+  return (
+    <header className="bg-white shadow-sm flex justify-between items-center px-8 py-4 border-b border-gray-200">
+      <div>
+        <h1 className="text-xl font-semibold text-gray-900">
+          {getRoleDisplay()}
+        </h1>
+        <p className="text-sm text-gray-500">
+          Welcome back, {user?.username}
+        </p>
+      </div>
+
+      <div className="flex items-center gap-4">
+        <span className="px-3 py-1 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium">
+          {user?.role?.toUpperCase()}
         </span>
         <button
           onClick={logout}
-          className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded-md transition"
+          className="btn-danger text-sm px-4 py-2"
         >
-          Logout
+          Sign Out
         </button>
       </div>
     </header>

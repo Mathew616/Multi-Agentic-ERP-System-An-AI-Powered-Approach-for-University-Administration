@@ -238,7 +238,8 @@ def create_app():
             "date": ev.date.isoformat() if ev.date else None,
             "department": ev.department,
             "category": ev.category,
-            "validated": ev.validated
+            "validated": ev.validated,
+            "type": ev.type 
         } for ev in d.events]
 
         # 🧩 New helper — fetch entity value by name
@@ -287,14 +288,12 @@ def create_app():
     @role_required(["teacher", "iqc"])
     def list_pending_events(current_user):
         try:
-            user = request.user
-
             # 🧑‍🏫 Teachers → See only events from their department that are unvalidated
-            if user.role == "teacher":
-                events = Event.query.filter_by(validated=False, department=user.department).all()
+            if current_user.role == "teacher":
+                events = Event.query.filter_by(validated=False, department=current_user.department).all()
             
             # 🧑‍💼 IQC → See all unvalidated events from all departments
-            elif user.role == "iqc":
+            elif current_user.role == "iqc":
                 events = Event.query.filter_by(validated=False).all()
             
             else:
@@ -328,7 +327,23 @@ def create_app():
         filename = d.filename
         upload_dir = app.config.get('UPLOAD_FOLDER', 'uploads')
         try:
-            return send_from_directory(upload_dir, filename, as_attachment=False)
+            # Determine mimetype
+            mimetype = 'application/pdf'
+            if filename.lower().endswith(('.png', '.jpg', '.jpeg')):
+                mimetype = 'image/jpeg' if filename.lower().endswith(('.jpg', '.jpeg')) else 'image/png'
+            elif filename.lower().endswith('.gif'):
+                mimetype = 'image/gif'
+            
+            response = send_from_directory(
+                upload_dir, 
+                filename, 
+                mimetype=mimetype,
+                as_attachment=False
+            )
+            # Force inline display
+            response.headers['Content-Disposition'] = 'inline'
+            response.headers['X-Content-Type-Options'] = 'nosniff'
+            return response
         except Exception as e:
             print("File send error:", e)
             abort(404)
@@ -377,22 +392,42 @@ def create_app():
     @role_required(['iqc', 'teacher', 'student'])
     def department_details(current_user, dept):
         try:
-            categories = ["Seminar", "Workshop", "Competitions", "General Event"]
+            categories = [
+                "Seminar",
+                "Workshop / Hands-on / Training",
+                "Guest Lecture / Expert Talk",
+                "Conference / Symposium",
+                "Competition / Hackathon / Quiz",
+                "Orientation / Induction / Welcome",
+                "Research / Report / Paper Presentation",
+                "General / Department Activity",
+            ]
             events = Event.query.filter_by(department=dept, validated=True).all()
 
-            # Group events by category
+            # Group events by category (fuzzy match like report generator)
             grouped = {cat: [] for cat in categories}
             for e in events:
-                cat = e.category.strip() if e.category else "General Event"
-                if cat not in grouped:
-                    grouped[cat] = []
-                grouped[cat].append({
-                    "id": e.id,
-                    "name": e.name,
-                    "date": e.date.isoformat() if e.date else None,
-                    "category": e.category,
-                    "validated": e.validated
-                })
+                matched = False
+                raw_cat = e.category.strip() if e.category else ""
+                for cat in categories:
+                    if cat.split("/")[0].strip().lower() in raw_cat.lower():
+                        grouped[cat].append({
+                            "id": e.id,
+                            "name": e.name,
+                            "date": e.date.isoformat() if e.date else None,
+                            "category": cat,
+                            "validated": e.validated
+                        })
+                        matched = True
+                        break
+                if not matched:
+                    grouped["General / Department Activity"].append({
+                        "id": e.id,
+                        "name": e.name,
+                        "date": e.date.isoformat() if e.date else None,
+                        "category": "General / Department Activity",
+                        "validated": e.validated
+                    })
 
             return jsonify({"department": dept, "events_by_category": grouped}), 200
 
@@ -445,6 +480,7 @@ def create_app():
             import datetime
             from io import BytesIO
             import os
+            import traceback
 
             # ✅ Path to DSU logo
             logo_path = os.path.join(os.getcwd(), "static", "dsu_logo.png")
@@ -463,6 +499,7 @@ def create_app():
 
             # ✅ Fetch validated events for the department
             events = Event.query.filter_by(department=dept, validated=True).all()
+            pending_events = Event.query.filter_by(department=dept, validated=False, status="pending").all()
 
             # ✅ Group events by their closest category
             grouped = {cat: [] for cat in EVENT_CATEGORIES}
@@ -476,81 +513,215 @@ def create_app():
                 if not matched:
                     grouped["General / Department Activity"].append(e)
 
-            # -------------------- PDF Creation --------------------
-            pdf = FPDF()
-            pdf.set_auto_page_break(auto=True, margin=15)
+            # -------------------- Enhanced PDF Creation --------------------
+            class PDF(FPDF):
+                def header(self):
+                    if self.page_no() == 1:
+                        return
+                    # Header for subsequent pages
+                    self.set_font('Times', 'I', 9)
+                    self.set_text_color(128, 128, 128)
+                    self.cell(0, 8, f'IQC Report - Department of {dept}', 0, 0, 'L')
+                    self.ln(10)
+
+                def footer(self):
+                    self.set_y(-15)
+                    self.set_font('Times', 'I', 9)
+                    self.set_text_color(100, 100, 100)
+                    self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
+
+            pdf = PDF()
+            pdf.set_auto_page_break(auto=True, margin=20)
             pdf.add_page()
 
-            # 🏫 Header Section
+            # 🏫 Professional Header Section
             if os.path.exists(logo_path):
-                pdf.image(logo_path, 10, 8, 25)
+                pdf.image(logo_path, x=15, y=12, w=30)
 
-            pdf.set_xy(40, 10)
-            pdf.set_font("Times", "B", 18)
-            pdf.cell(0, 10, "DAYANANDA SAGAR UNIVERSITY", ln=True, align="C")
+            pdf.set_xy(50, 12)
+            pdf.set_font("Times", "B", 20)
+            pdf.set_text_color(0, 51, 102)
+            pdf.cell(0, 8, "DAYANANDA SAGAR UNIVERSITY", ln=True, align="C")
+            
+            pdf.set_xy(50, 22)
+            pdf.set_font("Times", "", 11)
+            pdf.set_text_color(0, 0, 0)
+            pdf.cell(0, 6, "Shavige Malleshwara Hills, Kumaraswamy Layout, Bengaluru - 560078", ln=True, align="C")
+            
+            pdf.set_xy(50, 29)
             pdf.set_font("Times", "B", 15)
+            pdf.set_text_color(0, 51, 102)
             pdf.cell(0, 8, f"Department of {dept}", ln=True, align="C")
-            pdf.set_font("Times", "B", 14)
-            pdf.cell(0, 8, "Internal Quality Control (IQC) Report", ln=True, align="C")
+            
+            pdf.set_xy(50, 38)
+            pdf.set_font("Times", "B", 13)
+            pdf.set_text_color(204, 0, 0)
+            pdf.cell(0, 7, "Internal Quality Control (IQC) Report", ln=True, align="C")
 
-            # Blue line under heading
+            # Decorative line
             pdf.set_draw_color(0, 102, 204)
-            pdf.set_line_width(1)
-            pdf.line(10, 35, 200, 35)
-            pdf.ln(12)
+            pdf.set_line_width(1.5)
+            pdf.line(15, 50, 195, 50)
+            pdf.ln(15)
 
-            # 🕓 Report Info Section
-            pdf.set_font("Times", "", 12)
-            today = datetime.date.today().strftime("%d-%m-%Y")
-            pdf.cell(0, 8, "HOD: ____________________", ln=True)
-            pdf.cell(0, 8, f"Date Generated: {today}", ln=True)
-            pdf.cell(0, 8, f"Total Validated Events: {len(events)}", ln=True)
+            # 📋 Report Metadata Box
+            pdf.set_font("Times", "B", 11)
+            pdf.set_text_color(0, 0, 0)
+            pdf.set_fill_color(240, 248, 255)
+            
+            # Academic year calculation
+            today = datetime.date.today()
+            academic_year = f"{today.year-1}-{today.year}" if today.month < 6 else f"{today.year}-{today.year+1}"
+            
+            pdf.cell(0, 8, "REPORT INFORMATION", ln=True, fill=True, border=1)
+            pdf.set_font("Times", "", 11)
+            
+            # Two-column layout for report info
+            col_width = 95
+            pdf.cell(col_width, 7, f"Academic Year: {academic_year}", border=1)
+            pdf.cell(col_width, 7, f"Report Date: {today.strftime('%d-%m-%Y')}", border=1, ln=True)
+            
+            pdf.cell(col_width, 7, f"Department: {dept}", border=1)
+            pdf.cell(col_width, 7, f"Report Type: IQC Validation", border=1, ln=True)
+            
+            pdf.cell(col_width, 7, f"Total Validated Events: {len(events)}", border=1)
+            pdf.cell(col_width, 7, f"Pending Validation: {len(pending_events)}", border=1, ln=True)
+            
             pdf.ln(10)
 
-            # 📑 Category Sections
-            for cat, cat_events in grouped.items():
-                pdf.set_font("Times", "B", 13)
-                pdf.set_fill_color(230, 230, 250)
-                pdf.cell(0, 10, f"Category: {cat}", ln=True, fill=True)
+            # 📊 Executive Summary
+            pdf.set_font("Times", "B", 13)
+            pdf.set_fill_color(0, 102, 204)
+            pdf.set_text_color(255, 255, 255)
+            pdf.cell(0, 9, "EXECUTIVE SUMMARY", ln=True, fill=True, align="C")
+            pdf.ln(3)
 
-                pdf.set_font("Times", "B", 12)
-                pdf.set_fill_color(220, 220, 220)
-                pdf.cell(120, 8, "Event Title", border=1, fill=True)
-                pdf.cell(40, 8, "Date", border=1, ln=True, fill=True)
-                pdf.set_font("Times", "", 12)
+            # Category-wise statistics
+            pdf.set_font("Times", "B", 10)
+            pdf.set_text_color(0, 0, 0)
+            pdf.set_fill_color(230, 240, 250)
+            pdf.cell(110, 7, "Event Category", border=1, fill=True)
+            pdf.cell(40, 7, "Count", border=1, align="C", fill=True)
+            pdf.cell(40, 7, "Percentage", border=1, align="C", fill=True, ln=True)
 
-                if not cat_events:
-                    pdf.cell(0, 8, "No events in this category.", ln=True)
-                else:
-                    for e in cat_events:
-                        name = (e.name[:60] + "...") if len(e.name) > 60 else e.name
-                        date = e.date.strftime("%d-%m-%Y") if e.date else "N/A"
-                        pdf.cell(120, 8, name, border=1)
-                        pdf.cell(40, 8, date, border=1, ln=True)
-                pdf.ln(8)
+            pdf.set_font("Times", "", 10)
+            for cat in EVENT_CATEGORIES:
+                cat_count = len(grouped[cat])
+                if cat_count > 0:
+                    percentage = (cat_count / len(events) * 100) if len(events) > 0 else 0
+                    pdf.cell(110, 6, cat[:45], border=1)
+                    pdf.cell(40, 6, str(cat_count), border=1, align="C")
+                    pdf.cell(40, 6, f"{percentage:.1f}%", border=1, align="C", ln=True)
 
-            # 📘 Summary Section
-            pdf.ln(8)
-            pdf.set_font("Times", "B", 14)
-            pdf.cell(0, 10, "IQC Review Summary", ln=True)
-            pdf.set_draw_color(0, 102, 204)
-            pdf.set_line_width(0.5)
-            pdf.line(10, pdf.get_y(), 200, pdf.get_y())
             pdf.ln(8)
 
-            pdf.set_font("Times", "", 12)
-            pdf.cell(0, 8, f"Total Events: {len(events)}", ln=True)
-            pdf.cell(0, 8, "Pending Validation: __________", ln=True)
-            pdf.cell(0, 8, "IQC Reviewer: ____________________", ln=True)
-            pdf.cell(0, 8, "Signature: ____________________", ln=True)
-            pdf.cell(0, 8, "Date: ____________________", ln=True)
+            # 📑 Detailed Event Listings by Category
+            pdf.set_font("Times", "B", 13)
+            pdf.set_fill_color(0, 102, 204)
+            pdf.set_text_color(255, 255, 255)
+            pdf.cell(0, 9, "DETAILED EVENT LISTINGS", ln=True, fill=True, align="C")
             pdf.ln(5)
 
-            # Footer Section
-            pdf.set_y(-20)
-            pdf.set_font("Times", "I", 10)
+            for cat, cat_events in grouped.items():
+                if not cat_events:
+                    continue
+
+                # Category header
+                pdf.set_font("Times", "B", 12)
+                pdf.set_fill_color(200, 220, 255)
+                pdf.set_text_color(0, 0, 0)
+                pdf.cell(0, 8, f"Category: {cat} ({len(cat_events)} events)", ln=True, fill=True, border=1)
+                pdf.ln(1)
+
+                # Table header
+                pdf.set_font("Times", "B", 10)
+                pdf.set_fill_color(230, 240, 250)
+                pdf.cell(15, 7, "S.No", border=1, align="C", fill=True)
+                pdf.cell(105, 7, "Event Title", border=1, align="C", fill=True)
+                pdf.cell(35, 7, "Date", border=1, align="C", fill=True)
+                pdf.cell(35, 7, "Type", border=1, align="C", fill=True, ln=True)
+
+                # Event rows
+                pdf.set_font("Times", "", 9)
+                for idx, ev in enumerate(cat_events, 1):
+                    event_type = ev.type or "N/A"
+                    pdf.cell(15, 6, str(idx), border=1, align="C")
+                    pdf.cell(105, 6, ev.name[:52], border=1)
+                    pdf.cell(35, 6, ev.date.strftime("%d-%m-%Y") if ev.date else "N/A", border=1, align="C")
+                    pdf.cell(35, 6, event_type[:15], border=1, align="C", ln=True)
+
+                pdf.ln(6)
+
+            # 📝 Approval Section
+            pdf.add_page()
+            pdf.set_font("Times", "B", 14)
+            pdf.set_fill_color(0, 102, 204)
+            pdf.set_text_color(255, 255, 255)
+            pdf.cell(0, 10, "APPROVAL & CERTIFICATION", ln=True, fill=True, align="C")
+            pdf.ln(10)
+
+            pdf.set_text_color(0, 0, 0)
+            pdf.set_font("Times", "", 11)
+            pdf.multi_cell(0, 6, "This is to certify that the events listed in this report have been reviewed and validated by the Internal Quality Control (IQC) team as per the university's quality assurance standards and guidelines.")
+            pdf.ln(10)
+
+            # Signature boxes
+            pdf.set_font("Times", "B", 11)
+            pdf.cell(0, 7, "SIGNATURES AND APPROVALS", ln=True)
+            pdf.set_draw_color(0, 0, 0)
+            pdf.line(15, pdf.get_y(), 195, pdf.get_y())
+            pdf.ln(10)
+
+            # HOD Section
+            pdf.set_font("Times", "B", 10)
+            pdf.cell(0, 6, "Head of Department (HOD)", ln=True)
+            pdf.ln(2)
+            pdf.set_font("Times", "", 10)
+            pdf.cell(95, 6, "Name: _________________________________", ln=False)
+            pdf.ln(8)
+            pdf.cell(95, 6, "Signature: _____________________________", ln=False)
+            pdf.cell(95, 6, f"Date: {today.strftime('%d-%m-%Y')}", ln=True)
+            pdf.ln(12)
+
+            # IQC Reviewer Section
+            pdf.set_font("Times", "B", 10)
+            pdf.cell(0, 6, "IQC Reviewer", ln=True)
+            pdf.ln(2)
+            pdf.set_font("Times", "", 10)
+            pdf.cell(95, 6, f"Name: {current_user.username}", ln=False)
+            pdf.ln(8)
+            pdf.cell(95, 6, "Signature: _____________________________", ln=False)
+            pdf.cell(95, 6, f"Date: {today.strftime('%d-%m-%Y')}", ln=True)
+            pdf.ln(12)
+
+            # Principal/Director Section
+            pdf.set_font("Times", "B", 10)
+            pdf.cell(0, 6, "Principal/Director Approval", ln=True)
+            pdf.ln(2)
+            pdf.set_font("Times", "", 10)
+            pdf.cell(95, 6, "Name: _________________________________", ln=False)
+            pdf.ln(8)
+            pdf.cell(95, 6, "Signature: _____________________________", ln=False)
+            pdf.cell(95, 6, "Date: ___________________", ln=True)
+            pdf.ln(15)
+
+            # Official seal box
+            pdf.set_draw_color(0, 0, 0)
+            pdf.set_line_width(0.5)
+            pdf.rect(140, pdf.get_y(), 50, 30)
+            pdf.set_font("Times", "I", 9)
+            pdf.set_xy(140, pdf.get_y() + 12)
+            pdf.cell(50, 6, "Official Seal", align="C")
+
+            # Final footer with disclaimer
+            pdf.set_y(-35)
+            pdf.set_font("Times", "I", 8)
             pdf.set_text_color(100, 100, 100)
-            pdf.cell(0, 10, "Generated by IQC Portal - DSU", 0, 0, "C")
+            pdf.set_draw_color(200, 200, 200)
+            pdf.line(15, pdf.get_y(), 195, pdf.get_y())
+            pdf.ln(3)
+            pdf.multi_cell(0, 4, "This is a computer-generated report from the IQC Management System. For any queries or clarifications, please contact the Quality Assurance Cell at qa@dsu.edu.in", align="C")
+            pdf.cell(0, 4, f"Generated on {today.strftime('%d-%m-%Y at %H:%M:%S')}", 0, 0, "C")
 
             # ✅ Output safely
             try:
@@ -565,11 +736,12 @@ def create_app():
                 pdf_stream,
                 mimetype="application/pdf",
                 as_attachment=True,
-                download_name=f"{dept}_IQC_Report.pdf"
+                download_name=f"{dept}_IQC_Report_{today.strftime('%Y%m%d')}.pdf"
             )
 
         except Exception as err:
             print("[Report Generation Error]", err)
+            traceback.print_exc()
             return jsonify({"message": "Failed to generate report", "error": str(err)}), 500
 
 
@@ -718,6 +890,46 @@ def create_app():
         except Exception as e:
             print("[Validate] ❌ Error:", e)
             return jsonify({"message": "Validation failed", "error": str(e)}), 500
+    
+    @app.route('/api/validate/<int:event_id>/save', methods=['POST'])
+    @token_required
+    @role_required(['teacher', 'iqc'])
+    def save_event_without_validation(current_user, event_id):
+        """Save event data without validation - allows partial completion"""
+        try:
+            event = Event.query.get_or_404(event_id)
+            data = request.get_json() or {}
+            print("[Save] Saving event without validation:", data)
+
+            # Update event fields directly without validation
+            if data.get("name"):
+                event.name = data.get("name")
+            if data.get("date"):
+                event.date = datetime.datetime.strptime(data.get("date"), "%Y-%m-%d").date()
+            if data.get("category"):
+                event.category = data.get("category")
+            if data.get("department"):
+                event.department = data.get("department")
+            
+            # Optional fields
+            event.venue = data.get("venue", "")
+            event.organizer = data.get("organizer", "")
+            event.abstract = data.get("abstract", "")
+            
+            # Add reviewer comment if provided
+            if data.get("comment"):
+                event.reviewer_comment = data.get("comment")
+            
+            # Keep validated as False - this is a draft save
+            event.validated = False
+            db.session.commit()
+
+            print(f"[Save] ✅ Event {event.id} saved (without validation) by {current_user.username}")
+            return jsonify({"message": "saved", "event_id": event.id}), 200
+
+        except Exception as e:
+            print("[Save] ❌ Error:", e)
+            return jsonify({"message": "Save failed", "error": str(e)}), 500
     
     @app.route('/api/validate/<int:event_id>/reject', methods=['POST'])
     @token_required

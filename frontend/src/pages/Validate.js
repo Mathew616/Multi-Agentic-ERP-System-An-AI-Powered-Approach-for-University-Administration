@@ -14,15 +14,14 @@ import { useAuth } from "../context/AuthContext";
   ];
 
 const EVENT_TYPES = [
+  { value: "Workshop / Hands-on / Training", label: "Workshop / Hands-on / Training" },
   { value: "Seminar", label: "Seminar" },
-  { value: "Workshop", label: "Workshop / Hands-on / Training" },
-  { value: "Guest Lecture", label: "Guest Lecture / Expert Talk" },
-  { value: "Conference", label: "Conference / Symposium" },
-  { value: "Competition", label: "Competition / Hackathon / Quiz" },
-  { value: "Orientation", label: "Orientation / Induction / Welcome" },
-  { value: "Research/Report", label: "Research / Report / Paper Presentation" },
-  { value: "Certificate Event", label: "Certificate Event" },
-  { value: "General Event", label: "General / Department Activity" },
+  { value: "Guest Lecture / Expert Talk", label: "Guest Lecture / Expert Talk" },
+  { value: "Conference / Symposium", label: "Conference / Symposium" },
+  { value: "Competition / Hackathon / Quiz", label: "Competition / Hackathon / Quiz" },
+  { value: "Orientation / Induction / Welcome", label: "Orientation / Induction / Welcome" },
+  { value: "Research / Report / Paper Presentation", label: "Research / Report / Paper Presentation" },
+  { value: "General / Department Activity", label: "General / Department Activity" },
 ];
 
 function DocumentModal({ open, onClose, docId, token, onValidated }) {
@@ -84,6 +83,30 @@ function DocumentModal({ open, onClose, docId, token, onValidated }) {
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
+  const handleSave = async () => {
+    try {
+      const evId = doc.events[0].id;
+      const res = await axios.post(
+        `http://localhost:5000/api/validate/${evId}/save`,
+        form,
+        {
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (res.status === 200) {
+        alert("Event data saved successfully! (Validation pending)");
+        onClose();
+      }
+    } catch (e) {
+      console.error("Save failed", e);
+      alert("Save failed!");
+    }
+  };
+
   const handleValidate = async () => {
     try {
       const evId = doc.events[0].id;
@@ -100,9 +123,9 @@ function DocumentModal({ open, onClose, docId, token, onValidated }) {
 
       if (res.data.errors?.length) {
         setErrors(res.data.errors);
-        alert("⚠️ Please fix the highlighted fields.");
+        alert("Please fix the highlighted fields before proceeding.");
       } else {
-        alert("✅ Event validated successfully!");
+        alert("Event validated successfully!");
         onValidated(evId);
         onClose();
       }
@@ -124,7 +147,7 @@ function DocumentModal({ open, onClose, docId, token, onValidated }) {
       );
 
       if (res.status === 200) {
-        alert("❌ Document marked as NOT valid. Student will be notified.");
+        alert("Document marked as not valid. Student will be notified.");
         onValidated(evId);
         onClose();
       }
@@ -142,48 +165,76 @@ function DocumentModal({ open, onClose, docId, token, onValidated }) {
 
   // Get document type badge
   const docType = doc?.events?.[0]?.type || "Report";
+
+  "Report";
+
   const isCertificate = docType === "Certificate";
 
   return (
-    <div className="fixed inset-0 flex items-start justify-center p-6 z-50">
+    <div className="fixed inset-0 flex items-start justify-center p-4 z-50">
       <div className="absolute inset-0 bg-black opacity-40" onClick={onClose}></div>
-      <div className="bg-white rounded-lg p-6 shadow-xl relative z-50 w-full max-w-3xl max-h-[85vh] overflow-auto">
+      <div className="bg-white rounded-lg p-6 shadow-xl relative z-50 w-full max-w-7xl max-h-[90vh] overflow-auto">
         {/* Header with Document Type Badge */}
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-xl font-bold">Document Review & Validation</h2>
           <span
-            className={`px-3 py-1 rounded-full text-sm font-semibold ${
+            className={`badge ${
               isCertificate
                 ? "bg-purple-100 text-purple-700 border border-purple-300"
                 : "bg-blue-100 text-blue-700 border border-blue-300"
             }`}
           >
-            {isCertificate ? "📜 Certificate" : "📄 Report"}
+            {isCertificate ? "Certificate" : "Report"}
           </span>
         </div>
 
-        <a href={fileUrl} target="_blank" rel="noreferrer" className="text-blue-600 underline">
-          📄 Open Uploaded File
-        </a>
-
-        {errors.length > 0 && (
-          <div className="bg-red-50 border border-red-400 text-red-600 p-2 mt-3 rounded text-sm">
-            <strong>⚠ Validation Issues:</strong>
-            <ul className="list-disc ml-5">
-              {errors.map((e, i) => (
-                <li key={i}>{e}</li>
-              ))}
-            </ul>
+        {/* Two Column Layout */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Left Column - Document Viewer */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-gray-700">Document Preview</h3>
+              <a href={fileUrl} target="_blank" rel="noreferrer" className="text-indigo-600 hover:text-indigo-800 underline text-sm font-medium flex items-center gap-1">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                </svg>
+                Open in New Tab
+              </a>
+            </div>
+            <div className="border-2 border-gray-300 rounded-lg overflow-hidden bg-gray-100 sticky top-0 flex items-center justify-center">
+              <iframe
+                src={fileUrl}
+                className="w-full h-[calc(90vh-12rem)]"
+                title="Document Preview"
+                style={{ 
+                  border: 'none',
+                  objectFit: 'contain',
+                  display: 'block'
+                }}
+              />
+            </div>
           </div>
-        )}
 
-        <div className="mt-4 space-y-2">
+          {/* Right Column - Form Fields */}
+          <div className="space-y-4">
+            {errors.length > 0 && (
+              <div className="alert-error text-sm">
+                <strong>Validation Issues:</strong>
+                <ul className="list-disc ml-5">
+                  {errors.map((err, idx) => (
+                    <li key={idx}>{err}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            <div className="space-y-3">
           <label className="block">
             <span className="text-sm font-medium">Event Name:</span>
             <input
               value={form.name}
               onChange={(e) => handleChange("name", e.target.value)}
-              className={`border p-2 w-full rounded ${fieldStyle("event name")}`}
+              className={`border p-2 w-full rounded ${fieldStyle("name")}`}
             />
           </label>
 
@@ -191,7 +242,7 @@ function DocumentModal({ open, onClose, docId, token, onValidated }) {
             <span className="text-sm font-medium">Date:</span>
             <input
               type="date"
-              value={form.date ? form.date.slice(0, 10) : ""}
+              value={form.date}
               onChange={(e) => handleChange("date", e.target.value)}
               className={`border p-2 w-full rounded ${fieldStyle("date")}`}
             />
@@ -265,20 +316,6 @@ function DocumentModal({ open, onClose, docId, token, onValidated }) {
           </label>
         </div>
 
-        <div className="mt-4">
-          <h3 className="font-semibold">Extracted Entities</h3>
-          <ul className="list-disc pl-5 text-sm">
-            {doc?.entities?.length ? (
-              doc.entities.map((e, i) => (
-                <li key={i}>
-                  <strong>{e.entity_type}</strong>: {e.entity_value} (conf: {e.confidence})
-                </li>
-              ))
-            ) : (
-              <li>No entities found.</li>
-            )}
-          </ul>
-        </div>
 
         <div className="mt-6 space-y-2">
           <label className="block">
@@ -294,20 +331,28 @@ function DocumentModal({ open, onClose, docId, token, onValidated }) {
 
           <div className="flex justify-end gap-3">
             <button
-              onClick={handleValidate}
-              className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded"
+              onClick={handleSave}
+              className="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700"
             >
-              ✅ Validate & Save
+              Save
+            </button>
+            <button
+              onClick={handleValidate}
+              className="btn-success"
+            >
+              Validate & Save
             </button>
             <button
               onClick={handleReject}
-              className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded"
+              className="btn-danger"
             >
-              ❌ Discard / Not Valid
+              Mark as Invalid
             </button>
-            <button onClick={onClose} className="bg-gray-300 px-4 py-2 rounded">
+            <button onClick={onClose} className="btn-secondary">
               Close
             </button>
+          </div>
+        </div>
           </div>
         </div>
       </div>

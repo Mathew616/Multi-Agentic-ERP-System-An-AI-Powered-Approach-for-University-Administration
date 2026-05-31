@@ -1,10 +1,9 @@
-// src/pages/Login.js
 import React, { useState, useContext } from "react";
 import axios from "axios";
 import { AuthContext } from "../context/AuthContext";
 import { useNavigate } from "react-router-dom";
-import dsuLogo from "../assets/dsu_logo.png"; // DSU logo
-import dsuBg from "../assets/dsu.png"; // 🏫 Background image
+import dsuLogo from "../assets/dsu_logo.png";
+import dsuBg from "../assets/dsu.png";
 
 const Login = () => {
   const { login } = useContext(AuthContext);
@@ -42,71 +41,77 @@ const Login = () => {
       {/* Overlay for readability */}
       <div className="absolute inset-0 bg-black bg-opacity-40"></div>
 
-      <div className="relative z-10 bg-white/90 shadow-2xl rounded-2xl p-10 w-[25rem] text-center backdrop-blur-md border border-gray-300">
-        {/* 🏫 DSU Logo */}
+      <div className="relative z-10 bg-white/95 shadow-2xl rounded-2xl p-10 w-[26rem] text-center backdrop-blur-sm border border-gray-200">
         <img
           src={dsuLogo}
           alt="DSU Logo"
-          className="w-20 h-20 mx-auto mb-4 object-contain"
+          className="w-20 h-20 mx-auto mb-5 object-contain"
         />
 
-        <h2 className="text-3xl font-semibold mb-6 text-gray-800 tracking-wide">
-          DSU Portal Login
+        <h2 className="text-3xl font-semibold mb-2 text-gray-900">
+          DSU Portal
         </h2>
+        <p className="text-gray-600 mb-6 text-sm">
+          Sign in to continue
+        </p>
 
         {error && (
-          <p className="text-red-500 mb-3 text-center font-medium">{error}</p>
+          <div className="alert-error mb-4 text-sm">
+            {error}
+          </div>
         )}
 
         <form onSubmit={handleLogin} className="text-left">
-          {/* Username */}
           <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Username
+            </label>
             <input
-              className="w-full border border-gray-300 focus:border-blue-600 rounded-lg p-2.5 outline-none transition"
+              className="input-field w-full"
               type="text"
-              placeholder="Username"
+              placeholder="Enter your username"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               required
             />
           </div>
 
-          {/* Password */}
           <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Password
+            </label>
             <input
-              className="w-full border border-gray-300 focus:border-blue-600 rounded-lg p-2.5 outline-none transition"
+              className="input-field w-full"
               type="password"
-              placeholder="Password"
+              placeholder="Enter your password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
             />
           </div>
 
-          {/* Dummy Remember Me */}
-          <div className="flex items-center mb-5">
+          <div className="flex items-center mb-6">
             <input
               id="remember"
               type="checkbox"
               checked={remember}
               onChange={() => setRemember(!remember)}
-              className="h-4 w-4 text-blue-600 border-gray-300 rounded cursor-pointer"
+              className="h-4 w-4 text-indigo-600 border-gray-300 rounded cursor-pointer focus:ring-2 focus:ring-indigo-200"
             />
             <label htmlFor="remember" className="ml-2 text-sm text-gray-700">
               Remember me
             </label>
           </div>
 
-          {/* Login Button */}
           <button
-            className="w-full bg-blue-700 text-white py-2.5 rounded-lg font-medium hover:bg-blue-800 transition duration-200 shadow-md"
+            className="btn-primary w-full py-3"
             type="submit"
           >
-            Login
+            Sign In
           </button>
         </form>
 
-        <p className="text-xs text-gray-600 text-center mt-5">
+        <p className="text-xs text-gray-500 text-center mt-6">
           © {new Date().getFullYear()} Dayananda Sagar University
         </p>
       </div>

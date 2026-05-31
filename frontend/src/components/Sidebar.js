@@ -25,7 +25,7 @@ const Sidebar = () => {
       { name: "Tracker", icon: <BarChart3 size={18} />, onClick: handleTrackerClick },
     ],
     teacher: [
-      { path: "/teacher/upload", name: "Upload", icon: <Upload size={18} /> },
+      { path: "/upload", name: "Upload", icon: <Upload size={18} /> },
       { path: "/validate", name: "Validate", icon: <ClipboardCheck size={18} /> },
       { name: "Tracker", icon: <BarChart3 size={18} />, onClick: handleTrackerClick },
     ],
@@ -39,40 +39,42 @@ const Sidebar = () => {
   const links = linksByRole[user.role] || [];
 
   return (
-    <aside className="w-60 bg-gray-900 text-white flex flex-col p-4">
-    <div className="flex items-center gap-3 mb-10">
-      <img
-        src={dsuLogo}
-        alt="DSU Logo"
-        className="w-12 h-12 object-contain"
-      />
-      <h2 className="text-lg font-semibold tracking-wide">DSU Portal</h2>
-    </div>
+    <aside className="w-64 bg-gray-900 text-white flex flex-col shadow-xl">
+      <div className="flex items-center gap-3 p-6 border-b border-gray-800">
+        <img
+          src={dsuLogo}
+          alt="DSU Logo"
+          className="w-12 h-12 object-contain"
+        />
+        <div>
+          <h2 className="text-lg font-semibold">DSU Portal</h2>
+          <p className="text-xs text-gray-400">Event Management</p>
+        </div>
+      </div>
 
-
-      <nav className="flex flex-col space-y-3">
+      <nav className="flex flex-col p-4 space-y-2">
         {links.map((link) =>
           link.path ? (
             <Link
               key={link.name}
               to={link.path}
-              className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
+              className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-150 ${
                 location.pathname === link.path
-                  ? "bg-indigo-600 text-white"
-                  : "hover:bg-gray-700 text-gray-300"
+                  ? "bg-indigo-600 text-white shadow-md"
+                  : "hover:bg-gray-800 text-gray-300 hover:text-white"
               }`}
             >
               {link.icon}
-              {link.name}
+              <span className="font-medium">{link.name}</span>
             </Link>
           ) : (
             <button
               key={link.name}
               onClick={link.onClick}
-              className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-700 text-gray-300 transition-colors"
+              className="flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-gray-800 text-gray-300 hover:text-white transition-all duration-150 text-left"
             >
               {link.icon}
-              {link.name}
+              <span className="font-medium">{link.name}</span>
             </button>
           )
         )}

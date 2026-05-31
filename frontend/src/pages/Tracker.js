@@ -27,34 +27,26 @@ export default function Tracker() {
     fetchTracker();
   }, [token]);
 
-  const getEmoji = (dept) => {
-    switch (dept) {
-      case "AIML":
-        return "🤖";
-      case "CSE(Core)":
-        return "💻";
-      case "CSE-DS":
-        return "📊";
-      case "CSE-CY":
-        return "🔐";
-      case "ISE":
-        return "⚙️";
-      case "ECE":
-        return "📡";
-      case "AERO":
-        return "✈️";
-      default:
-        return "🏫";
-    }
+  const getDeptDisplay = (dept) => {
+    // Return clean department name
+    return dept;
   };
 
   return (
     <div className="p-8 bg-gray-50 min-h-screen">
       <div className="flex justify-between items-center mb-8">
-        <h1 className="text-3xl font-bold">IQC Department Tracker</h1>
+        <div>
+          <h1 className="text-3xl font-semibold text-gray-900">Department Tracker</h1>
+          <p className="text-gray-600 mt-1">Monitor validation progress across departments</p>
+        </div>
         <button
           onClick={fetchTracker}
-          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+          disabled={loading}
+          className={`px-5 py-2.5 rounded-lg font-medium transition-all duration-150 ${
+            loading 
+              ? "bg-gray-400 cursor-not-allowed text-white"
+              : "btn-primary hover:shadow-md"
+          }`}
         >
           {loading ? "Refreshing..." : "Refresh"}
         </button>
@@ -74,25 +66,26 @@ export default function Tracker() {
           return (
             <div
               key={dept}
-              className="p-6 bg-white border border-gray-200 rounded-2xl shadow-md cursor-pointer hover:shadow-lg transition transform hover:-translate-y-1"
+              className="card cursor-pointer hover:shadow-lg transition-all duration-200 hover:-translate-y-1"
               onClick={() => navigate(`/tracker/${dept}`)}
             >
-              <div className="flex justify-between items-center mb-3">
-                <h2 className="text-xl font-semibold text-gray-800">
-                  {getEmoji(dept)} {dept}
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-lg font-semibold text-gray-900">
+                  {dept}
                 </h2>
-                <span className="text-sm text-gray-500 font-medium">
-                  {percentage}% done
+                <span className="badge bg-gray-100 text-gray-700">
+                  {percentage}%
                 </span>
               </div>
-              <div className="w-full bg-gray-200 rounded-full h-3 mb-3">
+              <div className="w-full bg-gray-200 rounded-full h-2.5 mb-4">
                 <div
-                  className={`${barColor} h-3 rounded-full transition-all duration-500`}
+                  className={`${barColor} h-2.5 rounded-full transition-all duration-500`}
                   style={{ width: `${percentage}%` }}
                 ></div>
               </div>
-              <p className="text-sm text-gray-700 font-medium">
-                {validated} of {total} events validated
+              <p className="text-sm text-gray-600">
+                <span className="font-semibold text-gray-900">{validated}</span> of{" "}
+                <span className="font-semibold text-gray-900">{total}</span> events validated
               </p>
             </div>
           );

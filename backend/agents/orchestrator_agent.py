@@ -2,16 +2,35 @@
 backend/agents/orchestrator_agent.py
 
 Orchestrator coordinates the complete document processing pipeline.
-Pipeline: OCR → Field Extraction → Database Persistence
+Pipeline: OCR → NER (with categorization) → Abstract Generation → Database Persistence
 """
 
+from annotated_types import doc
 from agents.ocr_agent import OcrAgent
-from agents.field_extractor import RobustFieldExtractor
+from agents.ner_agent import NerAgent
+from agents.abstract_generator_agent import AbstractGeneratorAgent
 from models import db, Document, Event, ExtractedEntity
 import os
 from datetime import datetime, date
 from config import Config
 
+
+DEFAULT_DOC_TYPE = "Report"
+
+def _safe_default_extraction(doc):
+    """Return a minimal safe extraction dict used when ML fails."""
+    return {
+        "doc_type": DEFAULT_DOC_TYPE,
+        "event_name": "Untitled Event",
+        "date": None,
+        "department": doc.department or "General",
+        "venue": "",
+        "organizer": "",
+        "abstract": "",
+        "category": "General / Department Activity",
+        "confidence": 0.1,
+        "entities": []
+    }
 
 class OrchestratorAgent:
     def __init__(self):
@@ -23,20 +42,33 @@ class OrchestratorAgent:
             self.ocr_agent = None
         
         try:
-            self.field_extractor = RobustFieldExtractor()
-            print("[Orchestrator] ✅ Field Extractor initialized")
+            self.ner_agent = NerAgent()
+            print("[Orchestrator] ✅ Enhanced NER Agent initialized (with categorization)")
         except Exception as e:
-            print(f"[Orchestrator] ⚠️ Field Extractor init failed: {e}")
-            self.field_extractor = None
+            print(f"[Orchestrator] ⚠️ NER Agent init failed: {e}")
+            self.ner_agent = None
         
+        # Initialize Abstract Generator only if enabled in config
+        if Config.USE_ABSTRACT_AGENT:
+            try:
+                self.abstract_generator = AbstractGeneratorAgent(method='gemini')
+                print("[Orchestrator] ✅ Abstract Generator initialized (Gemini API)")
+            except Exception as e:
+                print(f"[Orchestrator] ⚠️ Abstract Generator init failed: {e}")
+                self.abstract_generator = None
+        else:
+            self.abstract_generator = None
+            print("[Orchestrator] ℹ️ Abstract Generator DISABLED (USE_ABSTRACT_AGENT=false)")
+
         print("[Orchestrator] ✅ Ready to process documents")
 
     def process_document(self, doc_id, file_path=None):
         """
         Complete document processing pipeline:
         1. OCR - Extract text from PDF/image
-        2. Field Extraction - Extract all structured fields
-        3. Database Persistence - Save document, event, and entities
+        2. NER + Categorization - Extract all structured fields
+        3. Abstract Generation - Generate/enhance abstract for reports
+        4. Database Persistence - Save document, event, and entities
         
         Args:
             doc_id (int): Document ID from database
@@ -101,46 +133,77 @@ class OrchestratorAgent:
             print(f"   - Source: {ocr_source}")
 
             # ========================================
-            # STEP 2: Field Extraction
+            # STEP 2: NER + Categorization
+            # ========================================
+            print(f"\n{'─' * 70}")
+            print("[Orchestrator] 🔍 STEP 2: Running Enhanced NER Agent...")
+            print(f"{'─' * 70}")
+
+            # Enhanced NER does both categorization and entity extraction
+            if self.ner_agent:
+                try:
+                    ner_result = self.ner_agent.predict(raw_text) or {}
+                except Exception as e:
+                    # If ML prediction fails, fall back safely
+                    print(f"[Orchestrator] ⚠️ NerAgent.predict failed: {e}")
+                    import traceback;
+                    traceback.print_exc()
+                    ner_result = _safe_default_extraction(doc)
+            else:
+                ner_result = _safe_default_extraction(doc)
+
+            # Defensive defaults
+            doc_type = ner_result.get("doc_type") or DEFAULT_DOC_TYPE
+            category = ner_result.get("category") or "General / Department Activity"
+            try:
+                confidence = float(ner_result.get("confidence", 0.5))
+            except Exception:
+                confidence = 0.5
+
+            event_name = ner_result.get("event_name") or "Untitled Event"
+            event_date_str = ner_result.get("date")
+            venue = ner_result.get("venue") or "Venue not specified"
+            organizer = ner_result.get("organizer") or "Organizer not specified"
+            department = ner_result.get("department")
+            if not department or department == "General":
+                # Use the uploader's department as fallback
+                department = doc.department or "General"
+                print(f"[Orchestrator] Using uploader's department: {department}")
+            abstract = ner_result.get("abstract") or ""
+
+            # ========================================
+            # STEP 3: Abstract Generation (Reports & Certificates)
             # ========================================
             print(f"\n{'─'*70}")
-            print("[Orchestrator] 🔍 STEP 2: Running Field Extraction...")
+            print(f"[Orchestrator] 📝 STEP 3: Abstract Generation for {doc_type}...")
             print(f"{'─'*70}")
             
-            extractor = self.field_extractor or RobustFieldExtractor()
-            
-            # Single unified extraction call
-            extracted = extractor.extract_all_fields(
-                text=raw_text,
-                filename=doc.filename
-            )
-
-            # Unpack all extracted fields
-            doc_type = extracted.get("doc_type", "Report")
-            event_name = extracted.get("event_name", "Untitled Event")
-            event_date_str = extracted.get("date")
-            department = extracted.get("department", "General")
-            venue = extracted.get("venue", "Venue not specified")
-            organizer = extracted.get("organizer", "Organizer not specified")
-            abstract = extracted.get("abstract", "No abstract found")
-            category = extracted.get("category", "General Event")
-            confidence = extracted.get("confidence", 0.5)
-
-            print(f"[Orchestrator] ✅ Extraction Complete:")
-            print(f"   📄 Document Type: {doc_type}")
-            print(f"   🎯 Event Name: {event_name}")
-            print(f"   📅 Date: {event_date_str}")
-            print(f"   🏢 Department: {department}")
-            print(f"   📍 Venue: {venue}")
-            print(f"   👤 Organizer: {organizer}")
-            print(f"   📂 Category: {category}")
-            print(f"   ✨ Confidence: {confidence}")
+            # Generate abstracts for both Reports and Certificates since both contain event details
+            # Note: Abstract generation can be disabled via USE_ABSTRACT_AGENT config flag
+            if self.abstract_generator and (not abstract or len(abstract.strip()) < 100):
+                try:
+                    generated_abstract = self.abstract_generator.generate(raw_text, max_length=500)
+                    if generated_abstract and len(generated_abstract) > len(abstract):
+                        abstract = generated_abstract
+                        print(f"[Orchestrator] ✅ Abstract generated ({len(abstract)} chars)")
+                    else:
+                        print(f"[Orchestrator] ℹ️ Using NER-extracted abstract")
+                except Exception as e:
+                    print(f"[Orchestrator] ⚠️ Abstract generation failed: {e}")
+                    # Keep existing abstract even if generation fails
+            else:
+                if not self.abstract_generator:
+                    print(f"[Orchestrator] ℹ️ Abstract Generator disabled (USE_ABSTRACT_AGENT=false)")
+                elif abstract and len(abstract.strip()) >= 100:
+                    print(f"[Orchestrator] ℹ️ Using existing abstract from NER ({len(abstract)} chars)")
+                else:
+                    print(f"[Orchestrator] ⚠️ No abstract available")
 
             # ========================================
-            # STEP 3: Date Normalization
+            # STEP 4: Date Normalization
             # ========================================
             print(f"\n{'─'*70}")
-            print("[Orchestrator] 📅 STEP 3: Normalizing Date...")
+            print("[Orchestrator] 📅 STEP 4: Normalizing Date...")
             print(f"{'─'*70}")
             
             if isinstance(event_date_str, str):
@@ -158,10 +221,10 @@ class OrchestratorAgent:
                 print(f"[Orchestrator] ⚠️ Invalid date format, using today: {event_date_obj}")
 
             # ========================================
-            # STEP 4: Save Document Record
+            # STEP 5: Save Document Record
             # ========================================
             print(f"\n{'─'*70}")
-            print("[Orchestrator] 💾 STEP 4: Saving Document to Database...")
+            print("[Orchestrator] 💾 STEP 5: Saving Document to Database...")
             print(f"{'─'*70}")
             
             doc.raw_text = raw_text
@@ -175,10 +238,10 @@ class OrchestratorAgent:
             print(f"[Orchestrator] ✅ Document saved (ID: {doc.id})")
 
             # ========================================
-            # STEP 5: Create Event Record
+            # STEP 6: Create Event Record
             # ========================================
             print(f"\n{'─'*70}")
-            print("[Orchestrator] 🎉 STEP 5: Creating Event Record...")
+            print("[Orchestrator] 🎉 STEP 6: Creating Event Record...")
             print(f"{'─'*70}")
             
             event = Event(
@@ -201,22 +264,27 @@ class OrchestratorAgent:
             print(f"   - Status: {event.status}")
 
             # ========================================
-            # STEP 6: Save Extracted Entities
+            # STEP 7: Save Extracted Entities
             # ========================================
             print(f"\n{'─'*70}")
-            print("[Orchestrator] 🏷️  STEP 6: Saving Extracted Entities...")
+            print("[Orchestrator] 🏷️  STEP 7: Saving Extracted Entities...")
             print(f"{'─'*70}")
             
+            # Build entities dict based on doc type
             entities_to_save = {
                 "event_name": event_name,
                 "date": str(event_date_obj),
                 "department": department,
                 "venue": venue,
                 "organizer": organizer,
-                "abstract": abstract,
                 "category": category,
                 "doc_type": doc_type
             }
+            
+            # Add type-specific entities
+            if doc_type != "Certificate":
+                if abstract:
+                    entities_to_save["abstract"] = abstract
 
             saved_count = 0
             for entity_type, entity_value in entities_to_save.items():
@@ -225,8 +293,9 @@ class OrchestratorAgent:
                         document_id=doc.id,
                         entity_type=entity_type,
                         entity_value=str(entity_value),
-                        confidence=confidence
+                        confidence=float(confidence)
                     )
+
                     db.session.add(entity)
                     saved_count += 1
 
@@ -253,7 +322,7 @@ class OrchestratorAgent:
             print(f"Department:   {department}")
             print(f"Category:     {category}")
             print(f"Date:         {event_date_obj}")
-            print(f"Confidence:   {confidence}")
+            print(f"Confidence:   {confidence:.2f}")
             print(f"Status:       needs_review")
             print(f"{'='*70}\n")
 

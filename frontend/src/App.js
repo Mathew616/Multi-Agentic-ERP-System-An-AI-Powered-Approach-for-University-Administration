@@ -13,7 +13,6 @@ import Admin from "./pages/Admin";
 import DepartmentTracker from "./pages/DepartmentTracker";
 import StudentTracker from "./pages/StudentTracker";
 import TeacherTracker from "./pages/TeacherTracker";
-import TeacherUpload from "./pages/TeacherUpload";
 
 function App() {
   return (
@@ -23,11 +22,11 @@ function App() {
           {/* Public route */}
           <Route path="/" element={<Login />} />
 
-          {/* Student Routes */}
+          {/* Upload for Students and Teachers */}
           <Route
             path="/upload"
             element={
-              <ProtectedRoute roles={["student"]}>
+              <ProtectedRoute roles={["student", "teacher"]}>
                 <Layout>
                   <Upload />
                 </Layout>
@@ -102,17 +101,6 @@ function App() {
               <ProtectedRoute roles={["teacher"]}>
                 <Layout>
                   <TeacherTracker />
-                </Layout>
-              </ProtectedRoute>
-            }
-          />
-          {/* Teacher Upload */}
-          <Route
-            path="/teacher/upload"
-            element={
-              <ProtectedRoute roles={["teacher"]}>
-                <Layout>
-                  <TeacherUpload />
                 </Layout>
               </ProtectedRoute>
             }

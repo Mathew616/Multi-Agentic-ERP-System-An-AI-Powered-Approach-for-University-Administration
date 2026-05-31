@@ -16,7 +16,7 @@ export default function Admin() {
   const [visiblePasswords, setVisiblePasswords] = useState({});
 
   const DEPARTMENTS = [
-    { value: "", label: "-- Department (optional) --" },
+    { value: "", label: " Select Department " },
     { value: "AIML", label: "Computer Science & Engineering - AIML" },
     { value: "CSE(Core)", label: "Computer Science & Engineering (Core)" },
     { value: "CSE-DS", label: "Computer Science & Engineering - Data Science" },
@@ -54,7 +54,7 @@ export default function Admin() {
           username: form.username,
           password: form.password,
           role: form.role,
-          department: form.department,
+          department: form.role === "iqc" ? "ALL" : form.department,
         },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -143,7 +143,14 @@ export default function Admin() {
 
           <select
             value={form.role}
-            onChange={(e) => setForm({ ...form, role: e.target.value })}
+            onChange={(e) => {
+              const newRole = e.target.value;
+              setForm({ 
+                ...form, 
+                role: newRole,
+                department: newRole === "iqc" ? "ALL" : form.department
+              });
+            }}
             className="border px-3 py-2 rounded"
           >
             <option value="student">Student</option>
@@ -152,15 +159,21 @@ export default function Admin() {
           </select>
 
           <select
-            value={form.department}
+            required={form.role !== "iqc"}
+            value={form.role === "iqc" ? "ALL" : form.department}
             onChange={(e) => setForm({ ...form, department: e.target.value })}
             className="border px-3 py-2 rounded"
+            disabled={form.role === "iqc"}
           >
-            {DEPARTMENTS.map((d) => (
-              <option key={d.value} value={d.value}>
-                {d.label}
-              </option>
-            ))}
+            {form.role === "iqc" ? (
+              <option value="ALL">ALL</option>
+            ) : (
+              DEPARTMENTS.map((d) => (
+                <option key={d.value} value={d.value}>
+                  {d.label}
+                </option>
+              ))
+            )}
           </select>
 
           <button
